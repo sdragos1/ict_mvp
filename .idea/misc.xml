@@ -15,4 +15,7 @@
     <option name="customApplicationId" value="" />
   </component>
   <component name="ProjectRootManager" version="2" project-jdk-name="uv (ict_mvp)" project-jdk-type="Python SDK" />
+  <component name="RuffConfiguration">
+    <option name="enabled" value="true" />
+  </component>
 </project>

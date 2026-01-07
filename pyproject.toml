@@ -9,4 +9,6 @@ dependencies = [
     "pandas-stubs~=2.3.3",
     "requests>=2.32.5",
     "ruff>=0.14.10",
+    "plotly>=5.18.0",
+    "nautilus_trader",
 ]

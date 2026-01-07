@@ -1,4 +1,5 @@
 import enum
+import uuid
 from dataclasses import dataclass
 from datetime import time, datetime
 from zoneinfo import ZoneInfo
@@ -6,14 +7,8 @@ from zoneinfo import ZoneInfo
 from nautilus_trader.model.objects import Price
 
 
-@dataclass
-class SessionKeyLevels:
-    high: Price = None
-    low: Price = None
-
-
 @dataclass(frozen=True)
-class Session:
+class SessionMetadata:
     name: str
     tz: str
     open_time: time
@@ -36,11 +31,26 @@ class Session:
         return open_utc, close_utc
 
     def is_active(self, ts_utc: datetime) -> bool:
-        """Return whether the session is active at the given UTC timestamp."""
         open_utc, close_utc = self.open_close_for(ts_utc)
         return open_utc <= ts_utc < close_utc
 
-class Sessions(enum.Enum):
-    TOKYO = Session("Tokyo", "Asia/Tokyo", time(9, 0), time(18, 0))
-    LONDON = Session("London", "Europe/London", time(8, 0), time(16, 0))
-    NEW_YORK = Session("New York", "America/New_York", time(8, 0), time(17, 0))
+
+class SessionMetadataList(enum.Enum):
+    TOKYO = SessionMetadata("Tokyo", "Asia/Tokyo", time(9, 0), time(18, 0))
+    LONDON = SessionMetadata("London", "Europe/London", time(8, 0), time(16, 0))
+    NEW_YORK = SessionMetadata("New York", "America/New_York", time(8, 0), time(17, 0))
+
+
+@dataclass
+class SessionState:
+    high: Price = None
+    low: Price = None
+    open_utc: datetime = None
+    close_utc: datetime = None
+
+
+class SessionEntity:
+    def __init__(self, metadata: SessionMetadata, state: SessionState):
+        self.id = uuid.uuid4()
+        self.metadata = metadata
+        self.state = state

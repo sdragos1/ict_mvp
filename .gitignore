@@ -214,6 +214,4 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
-
-catalog/data
-*.gz
+*.html

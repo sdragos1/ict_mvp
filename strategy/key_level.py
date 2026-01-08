@@ -2,11 +2,15 @@ from dataclasses import dataclass
 
 from nautilus_trader.model import Price
 
+from strategy.timeframe import Timeframe
+
 
 @dataclass(frozen=True)
 class KeyLevel:
     price: Price
     name: str
+    ts: int
+    observed_tf: Timeframe
     touched: bool = False
 
     @classmethod
@@ -15,6 +19,8 @@ class KeyLevel:
             price=Price.from_str(data["price"]),
             name=data["name"],
             touched=data["touched"],
+            ts=data.get("ts", 0),
+            observed_tf=Timeframe(data.get("observed_tf", Timeframe.FOUR_HOUR.value)),
         )
 
     def to_dict(self) -> dict:
@@ -22,6 +28,8 @@ class KeyLevel:
             "price": self.price.to_formatted_str(),
             "name": self.name,
             "touched": self.touched,
+            "ts": self.ts,
+            "observed_tf": self.observed_tf.value,
         }
 
 

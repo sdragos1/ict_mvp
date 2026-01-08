@@ -12,7 +12,10 @@ from nautilus_trader.common.config import LoggingConfig
 from nautilus_trader.model.data import BarType, Bar
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
 from nautilus_trader.trading.strategy import ImportableStrategyConfig
-from nautilus_trader.analysis.tearsheet import create_tearsheet, create_bars_with_fills
+from nautilus_trader.analysis.tearsheet import create_tearsheet
+from visualization import ChartBuilder
+
+from strategy.timeframe import Timeframe
 
 from catalog_setup import BAR_SPEC
 from strategy.history import StrategyHistory
@@ -72,54 +75,10 @@ if __name__ == "__main__":
 
     history = StrategyHistory.load_from_json_file(str(HISTORY_PATH))
 
-    fig = create_bars_with_fills(
-        engine=engine,
-        bar_type=bar_type,
-        title="ICT Strategy",
-    )
-
-    for session in history.sessions:
-        if not session.state.open_utc or not session.state.close_utc:
-            continue
-
-        color = "rgba(0, 0, 255, 0.1)"
-        if session.metadata.name == "Tokyo":
-            color = "rgba(255, 0, 0, 0.1)"
-        elif session.metadata.name == "London":
-            color = "rgba(0, 255, 0, 0.1)"
-        elif session.metadata.name == "New York":
-            color = "rgba(0, 0, 255, 0.1)"
-
-        fig.add_vrect(
-            x0=session.state.open_utc,
-            x1=session.state.close_utc,
-            fillcolor=color,
-            layer="below",
-            line_width=0,
-            annotation_text=session.metadata.name,
-            annotation_position="top left",
-        )
-
-        if session.state.high:
-            fig.add_shape(
-                type="line",
-                x0=session.state.open_utc,
-                y0=float(session.state.high),
-                x1=session.state.close_utc,
-                y1=float(session.state.high),
-                line=dict(color="green", width=1, dash="dash"),
-            )
-        if session.state.low:
-            fig.add_shape(
-                type="line",
-                x0=session.state.open_utc,
-                y0=float(session.state.low),
-                x1=session.state.close_utc,
-                y1=float(session.state.low),
-                line=dict(color="red", width=1, dash="dash"),
-            )
-
-    fig.write_html("bars_with_fills.html")
+    chart = ChartBuilder(engine=engine, base_bar_type=bar_type, title="ICT Strategy")
+    chart.add_timeframes(list(Timeframe), instruments[0].id)
+    chart.add_sessions(history)
+    chart.save("bars_with_fills.html")
 
     config = TearsheetConfig(
         charts=["bars_with_fills"],

@@ -3,7 +3,7 @@ from nautilus_trader.model.data import Bar, BarType
 from nautilus_trader.trading.strategy import Strategy, StrategyConfig
 
 from strategy.history import StrategyHistory
-from strategy.key_level import KeyLevels
+from strategy.key_level import KeyLevels, KeyLevel
 from strategy.session import (
     SessionState,
     SessionMetadataList,
@@ -57,9 +57,13 @@ class ICTStrategy(Strategy):
 
     def _handle_daily_bar(self, bar: Bar):
         prev_day_bar = self.cache.bar(self.bar_types[Timeframe.ONE_DAY], 1)
+        self.history.daily_key_levels.append(self.key_levels)
+        print(self.history.daily_key_levels)
         if prev_day_bar is not None:
-            self.key_levels.prev_day_low = prev_day_bar.low
-            self.key_levels.prev_day_high = prev_day_bar.high
+            self.key_levels.prev_day_low = KeyLevel(price=prev_day_bar.low, name="PDL")
+            self.key_levels.prev_day_high = KeyLevel(
+                price=prev_day_bar.high, name="PDH"
+            )
 
     def _check_session_key_levels(self, bar: Bar):
         for session in self.active_sessions.values():

@@ -113,6 +113,64 @@ class ChartBuilder:
                     line=dict(color="red", width=1, dash="dash"),
                 )
 
+    def add_key_levels(self, history: StrategyHistory):
+        # Infer dates from sessions to align daily key levels
+        # Assuming daily_key_levels corresponds to the sequence of days found in sessions
+        session_dates = sorted(
+            list(
+                set(
+                    s.state.open_utc.date()
+                    for s in history.sessions
+                    if s.state.open_utc
+                )
+            )
+        )
+
+        for i, levels in enumerate(history.daily_key_levels):
+            if i >= len(session_dates):
+                break
+
+            date = session_dates[i]
+            # Define time range for the day (UTC)
+            start_time = datetime.combine(
+                date, datetime.min.time(), tzinfo=timezone.utc
+            )
+            end_time = datetime.combine(date, datetime.max.time(), tzinfo=timezone.utc)
+
+            # Helper to add trace for a level
+            def add_level_trace(price, name, color, dash="solid"):
+                self.fig.add_trace(
+                    go.Scatter(
+                        x=[start_time, end_time],
+                        y=[float(price), float(price)],
+                        mode="lines",
+                        line=dict(color=color, width=1, dash=dash),
+                        name=f"{name} ({date})",
+                        visible=True,  # Initially visible
+                        showlegend=False,  # Clutter reduction
+                        hoverinfo="name+y",
+                    )
+                )
+
+            # Previous Day High/Low
+            if levels.prev_day_high:
+                add_level_trace(levels.prev_day_high.price, "PDH", "orange")
+
+            if levels.prev_day_low:
+                add_level_trace(levels.prev_day_low.price, "PDL", "orange")
+
+            # H4 Levels
+            for kl in levels.hour_4_high:
+                add_level_trace(kl.price, f"H4 High {kl.name}", "blue", "dash")
+            for kl in levels.hour_4_low:
+                add_level_trace(kl.price, f"H4 Low {kl.name}", "blue", "dot")
+
+            # H1 Levels
+            for kl in levels.hour_1_high:
+                add_level_trace(kl.price, f"H1 High {kl.name}", "cyan", "dash")
+            for kl in levels.hour_1_low:
+                add_level_trace(kl.price, f"H1 Low {kl.name}", "cyan", "dot")
+
     def _add_updatemenus(self):
         buttons = []
         for tf, indices in self.trace_indices.items():

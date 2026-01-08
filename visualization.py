@@ -25,6 +25,7 @@ class ChartBuilder:
         # Dictionary to keep track of trace indices for each timeframe
         # The default 1-minute traces are already added by create_bars_with_fills
         self.trace_indices = {Timeframe.ONE_MINUTE: list(range(len(self.fig.data)))}
+        self.key_level_indices = []
 
     def add_timeframes(self, timeframes: list[Timeframe], instrument_id: InstrumentId):
         for tf in timeframes:
@@ -114,62 +115,72 @@ class ChartBuilder:
                 )
 
     def add_key_levels(self, history: StrategyHistory):
-        # Infer dates from sessions to align daily key levels
-        # Assuming daily_key_levels corresponds to the sequence of days found in sessions
-        session_dates = sorted(
-            list(
-                set(
-                    s.state.open_utc.date()
-                    for s in history.sessions
-                    if s.state.open_utc
-                )
-            )
-        )
+        from datetime import timedelta
 
-        for i, levels in enumerate(history.daily_key_levels):
-            if i >= len(session_dates):
-                break
+        # Helper to map Timeframe to timedelta duration
+        def get_duration(tf_value):
+            if tf_value == "1-MINUTE":
+                return timedelta(minutes=1)
+            elif tf_value == "5-MINUTE":
+                return timedelta(minutes=5)
+            elif tf_value == "15-MINUTE":
+                return timedelta(minutes=15)
+            elif tf_value == "1-HOUR":
+                return timedelta(hours=1)
+            elif tf_value == "4-HOUR":
+                return timedelta(hours=4)
+            elif tf_value == "1-DAY":
+                return timedelta(days=1)
+            return timedelta(hours=1)  # Default fallback
 
-            date = session_dates[i]
-            # Define time range for the day (UTC)
-            start_time = datetime.combine(
-                date, datetime.min.time(), tzinfo=timezone.utc
-            )
-            end_time = datetime.combine(date, datetime.max.time(), tzinfo=timezone.utc)
+        for levels in history.daily_key_levels:
+            # We iterate through all key levels in the daily structure.
+            # Unlike before, we rely on the specific `ts` in each KeyLevel, not the session date index.
 
             # Helper to add trace for a level
-            def add_level_trace(price, name, color, dash="solid"):
+            def add_level_trace(kl, color):
+                if not getattr(kl, "ts", None):
+                    # Skip if no timestamp (legacy or undefined)
+                    return
+
+                start_time = datetime.fromtimestamp(
+                    kl.ts / 1_000_000_000, tz=timezone.utc
+                )
+                duration = get_duration(kl.observed_tf.value)
+                end_time = start_time + duration
+
                 self.fig.add_trace(
                     go.Scatter(
                         x=[start_time, end_time],
-                        y=[float(price), float(price)],
+                        y=[float(kl.price), float(kl.price)],
                         mode="lines",
-                        line=dict(color=color, width=1, dash=dash),
-                        name=f"{name} ({date})",
+                        line=dict(color=color, width=2),
+                        name=f"{kl.name} ({kl.observed_tf.value})",
                         visible=True,  # Initially visible
                         showlegend=False,  # Clutter reduction
-                        hoverinfo="name+y",
+                        hoverinfo="name+y+x",
                     )
                 )
+                self.key_level_indices.append(len(self.fig.data) - 1)
 
             # Previous Day High/Low
             if levels.prev_day_high:
-                add_level_trace(levels.prev_day_high.price, "PDH", "orange")
+                add_level_trace(levels.prev_day_high, "orange")
 
             if levels.prev_day_low:
-                add_level_trace(levels.prev_day_low.price, "PDL", "orange")
+                add_level_trace(levels.prev_day_low, "orange")
 
             # H4 Levels
             for kl in levels.hour_4_high:
-                add_level_trace(kl.price, f"H4 High {kl.name}", "blue", "dash")
+                add_level_trace(kl, "blue")
             for kl in levels.hour_4_low:
-                add_level_trace(kl.price, f"H4 Low {kl.name}", "blue", "dot")
+                add_level_trace(kl, "blue")
 
             # H1 Levels
             for kl in levels.hour_1_high:
-                add_level_trace(kl.price, f"H1 High {kl.name}", "cyan", "dash")
+                add_level_trace(kl, "magenta")
             for kl in levels.hour_1_low:
-                add_level_trace(kl.price, f"H1 Low {kl.name}", "cyan", "dot")
+                add_level_trace(kl, "magenta")
 
     def _add_updatemenus(self):
         buttons = []
@@ -177,6 +188,10 @@ class ChartBuilder:
             # Create visibility list: True for this TF's traces, False for others
             visible = [False] * len(self.fig.data)
             for i in indices:
+                visible[i] = True
+
+            # Always ensure key levels are visible
+            for i in self.key_level_indices:
                 visible[i] = True
 
             buttons.append(

@@ -78,6 +78,7 @@ if __name__ == "__main__":
     chart = ChartBuilder(engine=engine, base_bar_type=bar_type, title="ICT Strategy")
     chart.add_timeframes(list(Timeframe), instruments[0].id)
     chart.add_sessions(history)
+    chart.add_key_levels(history)
     chart.save("bars_with_fills.html")
 
     config = TearsheetConfig(

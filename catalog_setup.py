@@ -15,7 +15,7 @@ DATA_DIR = ROOT / "data"
 CATALOG_DIR.mkdir(exist_ok=True)
 
 BAR_SPEC = BarSpecification(
-    step=5,
+    step=1,
     aggregation=BarAggregation.MINUTE,
     price_type=PriceType.LAST,
 )

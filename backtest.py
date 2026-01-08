@@ -19,7 +19,7 @@ from strategy.history import StrategyHistory
 
 ROOT = Path(__file__).parent
 CATALOG_DIR = ROOT / "catalog"
-HISTORY_PATH = ROOT / "ict_history.json"
+HISTORY_PATH = ROOT / "history.json"
 
 venue = BacktestVenueConfig(
     name="SIM",
@@ -33,6 +33,8 @@ catalog = ParquetDataCatalog(CATALOG_DIR)
 
 instruments = catalog.instruments()
 
+bar_type = BarType(instruments[0].id, BAR_SPEC)
+
 data = BacktestDataConfig(
     catalog_path=str(catalog.path),
     data_cls=Bar,
@@ -41,8 +43,6 @@ data = BacktestDataConfig(
     end_time="2000-06-24",
 )
 
-bar_type = BarType(instruments[0].id, BAR_SPEC)
-
 
 engine_config = BacktestEngineConfig(
     strategies=[
@@ -50,7 +50,7 @@ engine_config = BacktestEngineConfig(
             strategy_path="strategy.strategy:ICTStrategy",
             config_path="strategy.strategy:ICTConfig",
             config={
-                "bar_type": bar_type,
+                "instrument_id": instruments[0].id,
                 "history_file": str(HISTORY_PATH),
             },
         )

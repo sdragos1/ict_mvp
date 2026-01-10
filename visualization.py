@@ -133,74 +133,92 @@ class ChartBuilder:
                 return timedelta(days=1)
             return timedelta(hours=1)  # Default fallback
 
+        # Aggregate data by (name, timeframe_value) to create single traces
+        # structure: key -> {x: [], y: [], color: str}
+        aggregated_data = {}
+
+        def collect_level(kl, color):
+            if not getattr(kl, "ts", None):
+                return
+
+            key = (kl.name, kl.observed_tf.value)
+            if key not in aggregated_data:
+                aggregated_data[key] = {"x": [], "y": [], "color": color}
+
+            start_time = datetime.fromtimestamp(kl.ts / 1_000_000_000, tz=timezone.utc)
+            duration = get_duration(kl.observed_tf.value)
+            end_time = start_time + duration
+
+            # Add segment followed by None to break the line
+            aggregated_data[key]["x"].extend([start_time, end_time, None])
+            aggregated_data[key]["y"].extend([float(kl.price), float(kl.price), None])
+
         for levels in history.daily_key_levels:
-            # We iterate through all key levels in the daily structure.
-            # Unlike before, we rely on the specific `ts` in each KeyLevel, not the session date index.
-
-            # Helper to add trace for a level
-            def add_level_trace(kl, color):
-                if not getattr(kl, "ts", None):
-                    # Skip if no timestamp (legacy or undefined)
-                    return
-
-                start_time = datetime.fromtimestamp(
-                    kl.ts / 1_000_000_000, tz=timezone.utc
-                )
-                duration = get_duration(kl.observed_tf.value)
-                end_time = start_time + duration
-
-                self.fig.add_trace(
-                    go.Scatter(
-                        x=[start_time, end_time],
-                        y=[float(kl.price), float(kl.price)],
-                        mode="lines",
-                        line=dict(color=color, width=2),
-                        name=f"{kl.name} ({kl.observed_tf.value})",
-                        visible=True,  # Initially visible
-                        showlegend=False,  # Clutter reduction
-                        hoverinfo="name+y+x",
-                    )
-                )
-                self.key_level_indices.append(len(self.fig.data) - 1)
-
             # Previous Day High/Low
             if levels.prev_day_high:
-                add_level_trace(levels.prev_day_high, "orange")
-
+                collect_level(levels.prev_day_high, "orange")
             if levels.prev_day_low:
-                add_level_trace(levels.prev_day_low, "orange")
+                collect_level(levels.prev_day_low, "orange")
 
             # H4 Levels
             for kl in levels.hour_4_high:
-                add_level_trace(kl, "blue")
+                collect_level(kl, "blue")
             for kl in levels.hour_4_low:
-                add_level_trace(kl, "blue")
+                collect_level(kl, "blue")
 
             # H1 Levels
             for kl in levels.hour_1_high:
-                add_level_trace(kl, "magenta")
+                collect_level(kl, "magenta")
             for kl in levels.hour_1_low:
-                add_level_trace(kl, "magenta")
+                collect_level(kl, "magenta")
+
+        # Create traces from aggregated data
+        for (name, tf_value), data in aggregated_data.items():
+            self.fig.add_trace(
+                go.Scatter(
+                    x=data["x"],
+                    y=data["y"],
+                    mode="lines",
+                    line=dict(color=data["color"], width=2),
+                    name=f"{name} ({tf_value})",
+                    visible=True,
+                    showlegend=True,
+                    hoverinfo="name+y+x",
+                    connectgaps=False,  # Ensure gaps are respected
+                )
+            )
+            self.key_level_indices.append(len(self.fig.data) - 1)
 
     def _add_updatemenus(self):
         buttons = []
-        for tf, indices in self.trace_indices.items():
-            # Create visibility list: True for this TF's traces, False for others
-            visible = [False] * len(self.fig.data)
-            for i in indices:
-                visible[i] = True
 
-            # Always ensure key levels are visible
-            for i in self.key_level_indices:
-                visible[i] = True
+        # Collect all indices that belong to Timeframe traces
+        all_tf_indices = []
+        for indices in self.trace_indices.values():
+            all_tf_indices.extend(indices)
+        all_tf_indices.sort()
+
+        for tf, indices in self.trace_indices.items():
+            # Create visibility list ONLY for the timeframe traces
+            # The length and order must match 'all_tf_indices' which we will pass as the 'traces' arg
+
+            # Map global index to boolean
+            # We want True if global index is in 'indices' (current tf), False otherwise (other tfs)
+            visible_status = []
+            for global_idx in all_tf_indices:
+                if global_idx in indices:
+                    visible_status.append(True)
+                else:
+                    visible_status.append(False)
 
             buttons.append(
                 dict(
                     label=tf.value,
                     method="update",
                     args=[
-                        {"visible": visible},
+                        {"visible": visible_status},
                         {"title": f"Strategy Chart - {tf.value}"},
+                        all_tf_indices,  # Traces to apply 'visible' to
                     ],
                 )
             )

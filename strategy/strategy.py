@@ -3,6 +3,7 @@ from nautilus_trader.model.data import Bar, BarType
 from nautilus_trader.trading.strategy import Strategy, StrategyConfig
 
 from strategy.bar import bar_is_high, bar_max_high, bar_is_low, bar_min_low
+from strategy.confluence.manager import ConfluenceManager
 from strategy.history import StrategyHistory
 from strategy.key_level import KeyLevels, KeyLevel
 from strategy.session import (
@@ -26,6 +27,7 @@ class ICTStrategy(Strategy):
         self.active_sessions: dict[SessionMetadata, SessionEntity] = dict()
         self.key_levels: KeyLevels = KeyLevels()
         self.history = StrategyHistory()
+        self.cm = ConfluenceManager()
 
         self.bar_types: dict[Timeframe, BarType] = dict()
         for tf in Timeframe:
@@ -44,7 +46,6 @@ class ICTStrategy(Strategy):
     def on_stop(self):
         for bt in self.bar_subs:
             self.unsubscribe_bars(bt)
-        print(self.history)
         self.history.dump_to_json_file(file_path=self.config.history_file)
 
     def on_bar(self, bar: Bar):
@@ -62,7 +63,10 @@ class ICTStrategy(Strategy):
 
     def _handle_hour1ly_bar(self, bar: Bar):
         self._refresh_active_sessions()
-        last_bar = self.cache.bar(self.bar_types[Timeframe.ONE_HOUR], 1)
+        bars: list[Bar] = self.cache.bars(self.bar_types[Timeframe.ONE_HOUR])
+
+        self.cm.detect_confluences(Timeframe.ONE_HOUR, bars[:-5])
+        last_bar = bars[-1]
         if last_bar is None:
             return
         if bar_is_high(last_bar, bar):
@@ -88,7 +92,6 @@ class ICTStrategy(Strategy):
 
     def _handle_hour4ly_bar(self, bar: Bar):
         last_bar = self.cache.bar(self.bar_types[Timeframe.FOUR_HOUR], 1)
-        print(last_bar, bar)
         if last_bar is None:
             return
         if bar_is_high(last_bar, bar):

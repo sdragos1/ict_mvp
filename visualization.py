@@ -32,10 +32,10 @@ class ChartBuilder:
         # We'll refine this in add_timeframes.
         self.min_y = float("inf")
         self.max_y = float("-inf")
-        
+
         # Capture initial range from existing traces if possible
         for trace in self.fig.data:
-            if hasattr(trace, 'close') and trace.close is not None:
+            if hasattr(trace, "close") and trace.close is not None:
                 # Approximate with available data
                 self.min_y = min(self.min_y, min(trace.low))
                 self.max_y = max(self.max_y, max(trace.high))
@@ -45,7 +45,7 @@ class ChartBuilder:
             if tf == Timeframe.ONE_MINUTE:
                 # Update min/max from likely existing 1m traces if we haven't successfully yet
                 # ...but simpler to just do it when we process bars.
-                # However, 1m bars are already in self.fig. 
+                # However, 1m bars are already in self.fig.
                 # Optimization: We already probably set min/max in __init__.
                 continue
 
@@ -98,8 +98,8 @@ class ChartBuilder:
     def add_sessions(self, history: StrategyHistory):
         # Ensure we have valid Y bounds. If no data plotted, default to something.
         if self.min_y == float("inf"):
-             self.min_y = 0
-             self.max_y = 100
+            self.min_y = 0
+            self.max_y = 100
 
         margin = (self.max_y - self.min_y) * 0.1
         y_low_bg = self.min_y - margin
@@ -111,7 +111,7 @@ class ChartBuilder:
         for session in history.sessions:
             if not session.state.open_utc or not session.state.close_utc:
                 continue
-            
+
             name = session.metadata.name
             color = "rgba(0, 0, 255, 0.1)"
             if name == "Tokyo":
@@ -127,7 +127,12 @@ class ChartBuilder:
             # Background Rectangle as a Scatter Trace
             self.fig.add_trace(
                 go.Scatter(
-                    x=[session.state.open_utc, session.state.close_utc, session.state.close_utc, session.state.open_utc],
+                    x=[
+                        session.state.open_utc,
+                        session.state.close_utc,
+                        session.state.close_utc,
+                        session.state.open_utc,
+                    ],
                     y=[y_low_bg, y_low_bg, y_high_bg, y_high_bg],
                     fill="toself",
                     fillcolor=color,
@@ -135,7 +140,7 @@ class ChartBuilder:
                     name=name,
                     legendgroup=name,
                     showlegend=show_legend,
-                    hoverinfo="skip"
+                    hoverinfo="skip",
                 )
             )
             self.persistent_indices.append(len(self.fig.data) - 1)
@@ -150,15 +155,15 @@ class ChartBuilder:
                         line=dict(color="green", width=1, dash="dash"),
                         name=f"{name} High",
                         legendgroup=name,
-                        showlegend=False, # Controlled by main group
-                        hoverinfo="name+y"
+                        showlegend=False,  # Controlled by main group
+                        hoverinfo="name+y",
                     )
                 )
                 self.persistent_indices.append(len(self.fig.data) - 1)
 
             # Session Low Line
             if session.state.low:
-                 self.fig.add_trace(
+                self.fig.add_trace(
                     go.Scatter(
                         x=[session.state.open_utc, session.state.close_utc],
                         y=[float(session.state.low), float(session.state.low)],
@@ -166,12 +171,11 @@ class ChartBuilder:
                         line=dict(color="red", width=1, dash="dash"),
                         name=f"{name} Low",
                         legendgroup=name,
-                        showlegend=False, # Controlled by main group
-                        hoverinfo="name+y"
+                        showlegend=False,  # Controlled by main group
+                        hoverinfo="name+y",
                     )
                 )
-                 self.persistent_indices.append(len(self.fig.data) - 1)
-
+                self.persistent_indices.append(len(self.fig.data) - 1)
 
     def add_key_levels(self, history: StrategyHistory):
         from datetime import timedelta
@@ -248,9 +252,61 @@ class ChartBuilder:
             )
             self.persistent_indices.append(len(self.fig.data) - 1)
 
+    def add_confluences(self, history: StrategyHistory):
+        from strategy.confluence.fvg import FairValueGapType
+
+        for daily in history.daily_confluences:
+            for tf, registry in daily.items():
+                for fvg in registry.fvgs:
+                    sorted_ts = sorted(fvg.related_ts)
+                    formation_start_ts = sorted_ts[0]
+                    formation_end_ts = sorted_ts[-1]
+
+                    # Convert to datetime
+                    formation_start_time = datetime.fromtimestamp(
+                        formation_start_ts / 1_000_000_000, tz=timezone.utc
+                    )
+                    formation_end_time = datetime.fromtimestamp(
+                        formation_end_ts / 1_000_000_000, tz=timezone.utc
+                    )
+                    # Determine color
+                    color = "rgba(0, 255, 0, 0.2)"  # Bullish Green
+                    if fvg.type == FairValueGapType.BEARISH:
+                        color = "rgba(255, 0, 0, 0.2)"  # Bearish Red
+
+                    formation_duration = formation_end_time - formation_start_time
+                    forward_extension = formation_duration * 5
+
+                    plot_start_time = formation_start_time
+                    plot_end_time = formation_end_time + forward_extension
+
+                    min_price = float(fvg.range.min_price)
+                    max_price = float(fvg.range.max_price)
+
+                    self.fig.add_trace(
+                        go.Scatter(
+                            x=[
+                                plot_start_time,
+                                plot_end_time,
+                                plot_end_time,
+                                plot_start_time,
+                            ],
+                            y=[min_price, min_price, max_price, max_price],
+                            fill="toself",
+                            fillcolor=color,
+                            mode="none",
+                            name=f"FVG {fvg.type.value}",
+                            legendgroup=f"FVG {tf.value}",
+                            showlegend=False,
+                            hoverinfo="name+y",
+                        )
+                    )
+
+                    self.trace_indices[tf].append(len(self.fig.data) - 1)
+
     def _add_updatemenus(self):
         buttons = []
-        
+
         # Collect all trace indices that belong to Timeframes (the ones we want to toggle via buttons)
         all_tf_indices = []
         for indices in self.trace_indices.values():
@@ -260,7 +316,7 @@ class ChartBuilder:
         for tf, indices in self.trace_indices.items():
             # Create visibility list ONLY for the timeframe traces
             # The length and order must match 'all_tf_indices' which we will pass as the 'traces' arg
-            
+
             # Map global index to boolean
             visible_status = []
             for global_idx in all_tf_indices:
@@ -274,9 +330,11 @@ class ChartBuilder:
                     label=tf.value,
                     method="update",
                     args=[
-                        {"visible": visible_status}, # Only contains bools for traces in all_tf_indices
+                        {
+                            "visible": visible_status
+                        },  # Only contains bools for traces in all_tf_indices
                         {"title": f"Strategy Chart - {tf.value}"},
-                        all_tf_indices, # Traces to apply 'visible' to. Persistent traces are ignored (untouched).
+                        all_tf_indices,  # Traces to apply 'visible' to. Persistent traces are ignored (untouched).
                     ],
                 )
             )

@@ -65,7 +65,7 @@ class ICTStrategy(Strategy):
         self._refresh_active_sessions()
         bars: list[Bar] = self.cache.bars(self.bar_types[Timeframe.ONE_HOUR])
 
-        self.cm.detect_confluences(Timeframe.ONE_HOUR, bars[:-5])
+        self.cm.detect_confluences(Timeframe.ONE_HOUR, bars[:5])
         last_bar = bars[-1]
         if last_bar is None:
             return
@@ -131,6 +131,8 @@ class ICTStrategy(Strategy):
                 observed_tf=Timeframe.ONE_DAY,
             )
         self.history.daily_key_levels.append(self.key_levels)
+        self.history.daily_confluences.append(self.cm.confluences.copy())
+        self.cm.init_confluences()
         self.key_levels = KeyLevels()
 
     def _check_session_key_levels(self, bar: Bar):

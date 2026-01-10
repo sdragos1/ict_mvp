@@ -6,13 +6,16 @@ from strategy.timeframe import Timeframe
 
 
 class ConfluenceManager:
-    cfs: dict[Timeframe, ConfluenceRegistry]
+    confluences: dict[Timeframe, ConfluenceRegistry]
 
     def __init__(self):
-        self.cfs = {}
+        self.confluences = {}
+        self.init_confluences()
+
+    def init_confluences(self):
+        for tf in Timeframe:
+            self.confluences[tf] = ConfluenceRegistry()
 
     def detect_confluences(self, tf: Timeframe, bars: list[Bar]) -> None:
         fvgs = FairValueGap.detect(bars, tf)
-        if tf not in self.cfs:
-            self.cfs[tf] = ConfluenceRegistry()
-        self.cfs[tf].fvgs.extend(fvgs)
+        self.confluences[tf].add_fvgs(fvgs)

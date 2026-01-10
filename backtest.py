@@ -79,6 +79,7 @@ if __name__ == "__main__":
     chart.add_timeframes(list(Timeframe), instruments[0].id)
     chart.add_sessions(history)
     chart.add_key_levels(history)
+    chart.add_confluences(history)
     chart.save("bars_with_fills.html")
 
     config = TearsheetConfig(

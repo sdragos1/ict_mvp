@@ -25,11 +25,28 @@ class ChartBuilder:
         # Dictionary to keep track of trace indices for each timeframe
         # The default 1-minute traces are already added by create_bars_with_fills
         self.trace_indices = {Timeframe.ONE_MINUTE: list(range(len(self.fig.data)))}
-        self.key_level_indices = []
+        self.persistent_indices = []
+
+        # Initialize mix/max with initial 1m data if available
+        # Note: Plotly figures from `create_bars_with_fills` should have data.
+        # We'll refine this in add_timeframes.
+        self.min_y = float("inf")
+        self.max_y = float("-inf")
+        
+        # Capture initial range from existing traces if possible
+        for trace in self.fig.data:
+            if hasattr(trace, 'close') and trace.close is not None:
+                # Approximate with available data
+                self.min_y = min(self.min_y, min(trace.low))
+                self.max_y = max(self.max_y, max(trace.high))
 
     def add_timeframes(self, timeframes: list[Timeframe], instrument_id: InstrumentId):
         for tf in timeframes:
             if tf == Timeframe.ONE_MINUTE:
+                # Update min/max from likely existing 1m traces if we haven't successfully yet
+                # ...but simpler to just do it when we process bars.
+                # However, 1m bars are already in self.fig. 
+                # Optimization: We already probably set min/max in __init__.
                 continue
 
             bt = tf.to_bar_type(instrument_id)
@@ -52,6 +69,12 @@ class ChartBuilder:
             lows = [float(b.low) for b in bars]
             closes = [float(b.close) for b in bars]
 
+            # Update Global Min/Max
+            current_min = min(lows)
+            current_max = max(highs)
+            self.min_y = min(self.min_y, current_min)
+            self.max_y = max(self.max_y, current_max)
+
             times = [
                 datetime.fromtimestamp(b.ts_init / 1_000_000_000, tz=timezone.utc)
                 for b in bars
@@ -73,46 +96,82 @@ class ChartBuilder:
             self.trace_indices[tf] = [len(self.fig.data) - 1]
 
     def add_sessions(self, history: StrategyHistory):
+        # Ensure we have valid Y bounds. If no data plotted, default to something.
+        if self.min_y == float("inf"):
+             self.min_y = 0
+             self.max_y = 100
+
+        margin = (self.max_y - self.min_y) * 0.1
+        y_low_bg = self.min_y - margin
+        y_high_bg = self.max_y + margin
+
+        # Track which groups we've added to show legend only once per group
+        added_legend_groups = set()
+
         for session in history.sessions:
             if not session.state.open_utc or not session.state.close_utc:
                 continue
-
+            
+            name = session.metadata.name
             color = "rgba(0, 0, 255, 0.1)"
-            if session.metadata.name == "Tokyo":
+            if name == "Tokyo":
                 color = "rgba(255, 0, 0, 0.1)"
-            elif session.metadata.name == "London":
+            elif name == "London":
                 color = "rgba(0, 255, 0, 0.1)"
-            elif session.metadata.name == "New York":
+            elif name == "New York":
                 color = "rgba(0, 0, 255, 0.1)"
 
-            self.fig.add_vrect(
-                x0=session.state.open_utc,
-                x1=session.state.close_utc,
-                fillcolor=color,
-                layer="below",
-                line_width=0,
-                annotation_text=session.metadata.name,
-                annotation_position="top left",
-            )
+            show_legend = name not in added_legend_groups
+            added_legend_groups.add(name)
 
+            # Background Rectangle as a Scatter Trace
+            self.fig.add_trace(
+                go.Scatter(
+                    x=[session.state.open_utc, session.state.close_utc, session.state.close_utc, session.state.open_utc],
+                    y=[y_low_bg, y_low_bg, y_high_bg, y_high_bg],
+                    fill="toself",
+                    fillcolor=color,
+                    mode="none",
+                    name=name,
+                    legendgroup=name,
+                    showlegend=show_legend,
+                    hoverinfo="skip"
+                )
+            )
+            self.persistent_indices.append(len(self.fig.data) - 1)
+
+            # Session High Line
             if session.state.high:
-                self.fig.add_shape(
-                    type="line",
-                    x0=session.state.open_utc,
-                    y0=float(session.state.high),
-                    x1=session.state.close_utc,
-                    y1=float(session.state.high),
-                    line=dict(color="green", width=1, dash="dash"),
+                self.fig.add_trace(
+                    go.Scatter(
+                        x=[session.state.open_utc, session.state.close_utc],
+                        y=[float(session.state.high), float(session.state.high)],
+                        mode="lines",
+                        line=dict(color="green", width=1, dash="dash"),
+                        name=f"{name} High",
+                        legendgroup=name,
+                        showlegend=False, # Controlled by main group
+                        hoverinfo="name+y"
+                    )
                 )
+                self.persistent_indices.append(len(self.fig.data) - 1)
+
+            # Session Low Line
             if session.state.low:
-                self.fig.add_shape(
-                    type="line",
-                    x0=session.state.open_utc,
-                    y0=float(session.state.low),
-                    x1=session.state.close_utc,
-                    y1=float(session.state.low),
-                    line=dict(color="red", width=1, dash="dash"),
+                 self.fig.add_trace(
+                    go.Scatter(
+                        x=[session.state.open_utc, session.state.close_utc],
+                        y=[float(session.state.low), float(session.state.low)],
+                        mode="lines",
+                        line=dict(color="red", width=1, dash="dash"),
+                        name=f"{name} Low",
+                        legendgroup=name,
+                        showlegend=False, # Controlled by main group
+                        hoverinfo="name+y"
+                    )
                 )
+                 self.persistent_indices.append(len(self.fig.data) - 1)
+
 
     def add_key_levels(self, history: StrategyHistory):
         from datetime import timedelta
@@ -187,12 +246,12 @@ class ChartBuilder:
                     connectgaps=False,  # Ensure gaps are respected
                 )
             )
-            self.key_level_indices.append(len(self.fig.data) - 1)
+            self.persistent_indices.append(len(self.fig.data) - 1)
 
     def _add_updatemenus(self):
         buttons = []
-
-        # Collect all indices that belong to Timeframe traces
+        
+        # Collect all trace indices that belong to Timeframes (the ones we want to toggle via buttons)
         all_tf_indices = []
         for indices in self.trace_indices.values():
             all_tf_indices.extend(indices)
@@ -201,9 +260,8 @@ class ChartBuilder:
         for tf, indices in self.trace_indices.items():
             # Create visibility list ONLY for the timeframe traces
             # The length and order must match 'all_tf_indices' which we will pass as the 'traces' arg
-
+            
             # Map global index to boolean
-            # We want True if global index is in 'indices' (current tf), False otherwise (other tfs)
             visible_status = []
             for global_idx in all_tf_indices:
                 if global_idx in indices:
@@ -216,9 +274,9 @@ class ChartBuilder:
                     label=tf.value,
                     method="update",
                     args=[
-                        {"visible": visible_status},
+                        {"visible": visible_status}, # Only contains bools for traces in all_tf_indices
                         {"title": f"Strategy Chart - {tf.value}"},
-                        all_tf_indices,  # Traces to apply 'visible' to
+                        all_tf_indices, # Traces to apply 'visible' to. Persistent traces are ignored (untouched).
                     ],
                 )
             )

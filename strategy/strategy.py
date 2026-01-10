@@ -44,6 +44,7 @@ class ICTStrategy(Strategy):
     def on_stop(self):
         for bt in self.bar_subs:
             self.unsubscribe_bars(bt)
+        print(self.history)
         self.history.dump_to_json_file(file_path=self.config.history_file)
 
     def on_bar(self, bar: Bar):
@@ -61,11 +62,11 @@ class ICTStrategy(Strategy):
 
     def _handle_hour1ly_bar(self, bar: Bar):
         self._refresh_active_sessions()
-        last_hourly_bar = self.cache.bar(self.bar_types[Timeframe.ONE_HOUR], 1)
-        if last_hourly_bar is None:
+        last_bar = self.cache.bar(self.bar_types[Timeframe.ONE_HOUR], 1)
+        if last_bar is None:
             return
-        if bar_is_high(last_hourly_bar, bar):
-            high_bar = bar_max_high(last_hourly_bar, bar)
+        if bar_is_high(last_bar, bar):
+            high_bar = bar_max_high(last_bar, bar)
             self.key_levels.hour_1_high.append(
                 KeyLevel(
                     price=high_bar.high,
@@ -74,8 +75,8 @@ class ICTStrategy(Strategy):
                     observed_tf=Timeframe.ONE_HOUR,
                 )
             )
-        if bar_is_low(bar, last_hourly_bar):
-            low_bar = bar_min_low(last_hourly_bar, bar)
+        if bar_is_low(last_bar, bar):
+            low_bar = bar_min_low(last_bar, bar)
             self.key_levels.hour_1_low.append(
                 KeyLevel(
                     price=low_bar.low,
@@ -86,11 +87,12 @@ class ICTStrategy(Strategy):
             )
 
     def _handle_hour4ly_bar(self, bar: Bar):
-        last_hourly_bar = self.cache.bar(self.bar_types[Timeframe.FOUR_HOUR], 1)
-        if last_hourly_bar is None:
+        last_bar = self.cache.bar(self.bar_types[Timeframe.FOUR_HOUR], 1)
+        print(last_bar, bar)
+        if last_bar is None:
             return
-        if bar_is_high(last_hourly_bar, bar):
-            high_bar = bar_max_high(last_hourly_bar, bar)
+        if bar_is_high(last_bar, bar):
+            high_bar = bar_max_high(last_bar, bar)
             self.key_levels.hour_4_high.append(
                 KeyLevel(
                     price=high_bar.high,
@@ -99,8 +101,8 @@ class ICTStrategy(Strategy):
                     observed_tf=Timeframe.FOUR_HOUR,
                 )
             )
-        if bar_is_low(bar, last_hourly_bar):
-            low_bar = bar_min_low(last_hourly_bar, bar)
+        if bar_is_low(last_bar, bar):
+            low_bar = bar_min_low(last_bar, bar)
             self.key_levels.hour_4_low.append(
                 KeyLevel(
                     price=low_bar.low,
@@ -112,8 +114,6 @@ class ICTStrategy(Strategy):
 
     def _handle_daily_bar(self, bar: Bar):
         prev_day_bar = self.cache.bar(self.bar_types[Timeframe.ONE_DAY], 1)
-        self.history.daily_key_levels.append(self.key_levels)
-        print(self.history.daily_key_levels)
         if prev_day_bar is not None:
             self.key_levels.prev_day_low = KeyLevel(
                 price=prev_day_bar.low,
@@ -127,6 +127,8 @@ class ICTStrategy(Strategy):
                 ts=prev_day_bar.ts_init,
                 observed_tf=Timeframe.ONE_DAY,
             )
+        self.history.daily_key_levels.append(self.key_levels)
+        self.key_levels = KeyLevels()
 
     def _check_session_key_levels(self, bar: Bar):
         for session in self.active_sessions.values():
